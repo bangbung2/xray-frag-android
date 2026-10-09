@@ -38,7 +38,7 @@ jobs:
           gomobile init
           mkdir -p ../app/libs
           gomobile bind -target=android/arm64,android/arm -androidapi 24 \
-            -ldflags="-s -w" -o ../app/libs/xb.aar ./xb
+            -ldflags="-s -w -checklinkname=0" -o ../app/libs/xb.aar ./xb
 
       - name: Download geoip/geosite
         run: |
