@@ -1,0 +1,59 @@
+name: build-apk
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r26d
+
+      - name: Build Xray + tun2socks AAR
+        working-directory: go
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          go get github.com/xtls/xray-core@latest
+          go get github.com/xjasonlyu/tun2socks/v2@latest
+          go get golang.org/x/mobile/bind@latest
+          go mod tidy
+          gomobile init
+          mkdir -p ../app/libs
+          gomobile bind -target=android/arm64,android/arm -androidapi 24 \
+            -ldflags="-s -w" -o ../app/libs/xb.aar ./xb
+
+      - name: Download geoip/geosite
+        run: |
+          B=https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download
+          curl -fL -o app/src/main/assets/geoip.dat   $B/geoip.dat
+          curl -fL -o app/src/main/assets/geosite.dat $B/geosite.dat
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xray-frag-apk
+          path: app/build/outputs/apk/debug/*.apk
