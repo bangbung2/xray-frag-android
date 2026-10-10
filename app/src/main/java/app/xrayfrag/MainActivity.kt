@@ -73,6 +73,20 @@ class MainActivity : Activity() {
             row1.addView(this, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
 
+        val modes = listOf("Asli", "Ringan", "Mati")
+        Button(this).apply {
+            isAllCaps = false; textSize = 12f
+            text = "Frag: ${modes[this@MainActivity.getSharedPreferences("app", MODE_PRIVATE).getInt("fragMode", 0)]}"
+            setOnClickListener {
+                val sp = this@MainActivity.getSharedPreferences("app", MODE_PRIVATE)
+                val n = (sp.getInt("fragMode", 0) + 1) % 3
+                sp.edit().putInt("fragMode", n).apply()
+                text = "Frag: ${modes[n]}"
+                Toast.makeText(this@MainActivity, "Putuskan lalu sambungkan lagi", Toast.LENGTH_SHORT).show()
+            }
+            row1.addView(this, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+
         // ---- panel config (tersembunyi secara default) ----
         panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
