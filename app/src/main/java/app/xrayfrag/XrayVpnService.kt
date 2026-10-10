@@ -3,6 +3,7 @@ package app.xrayfrag
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.VpnService
+import org.json.JSONArray
 import org.json.JSONObject
 import xb.Xb
 import java.io.File
@@ -116,6 +117,27 @@ class XrayVpnService : VpnService() {
                     a == "localhost" -> s.put("address", sys)
                     a.isNotEmpty() && !a.contains("://") && !a.startsWith("fakedns") && !isIp(a) ->
                         resolveHost(a)?.let { s.put("address", it) }
+                }
+            }
+        }
+        // mode fragment TLS: 0 = asli (config), 1 = ringan, 2 = mati (tanpa fragment)
+        val mode = getSharedPreferences("app", MODE_PRIVATE).getInt("fragMode", 0)
+        val outs = root.optJSONArray("outbounds")
+        if (mode != 0 && outs != null) {
+            for (i in 0 until outs.length()) {
+                val o = outs.optJSONObject(i) ?: continue
+                if (o.optString("tag") != "tcp-fragment-tls") continue
+                val ss = o.optJSONObject("streamSettings") ?: continue
+                if (mode == 1) {
+                    val st = JSONObject()
+                        .put("packets", "tlshello")
+                        .put("lengths", JSONArray().put("100-200"))
+                        .put("delays", JSONArray().put("1-3"))
+                        .put("maxSplit", "0")
+                    val fm = JSONObject().put("tcp", JSONArray().put(JSONObject().put("type", "fragment").put("settings", st)))
+                    ss.put("finalmask", fm)
+                } else {
+                    ss.remove("finalmask")
                 }
             }
         }
