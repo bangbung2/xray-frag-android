@@ -7,6 +7,7 @@ import org.json.JSONObject
 import xb.Xb
 import java.io.File
 import java.net.Inet4Address
+import java.net.InetAddress
 
 class XrayVpnService : VpnService() {
 
@@ -43,7 +44,8 @@ class XrayVpnService : VpnService() {
             if (running) return
             try {
                 status = "Menyambung…"
-                val cfg = patchDns(ConfigStore.load(this))
+                File(filesDir, "xray.log").delete()
+                val cfg = patchConfig(ConfigStore.load(this))
                 val dir = prepareAssets()
                 Xb.startXray(cfg, dir)
 
@@ -81,20 +83,44 @@ class XrayVpnService : VpnService() {
         }
     }
 
-    /**
-     * Go di Android tidak punya resolver sistem untuk "localhost", jadi diganti
-     * dengan IP DNS jaringan aktif (diambil sebelum VPN naik).
-     */
-    private fun patchDns(cfg: String): String {
+    /** IP DNS jaringan aktif (dibaca sebelum VPN naik). */
+    private fun systemDns(): String {
         val cm = getSystemService(ConnectivityManager::class.java)
-        val dns = cm.getLinkProperties(cm.activeNetwork)?.dnsServers
-            ?.firstOrNull { it is Inet4Address }?.hostAddress ?: return cfg
+        val list = cm.activeNetwork?.let { cm.getLinkProperties(it) }?.dnsServers.orEmpty()
+        val ip = list.firstOrNull { it is Inet4Address } ?: list.firstOrNull()
+        return ip?.hostAddress?.substringBefore('%') ?: "8.8.8.8"
+    }
+
+    private fun isIp(a: String) = Regex("^[0-9a-fA-F:.\\[\\]]+$").matches(a)
+
+    /** Resolve hostname lewat resolver Android (sebelum VPN naik). */
+    private fun resolveHost(h: String): String? = try {
+        val all = InetAddress.getAllByName(h)
+        (all.firstOrNull { it is Inet4Address } ?: all.firstOrNull())?.hostAddress
+    } catch (_: Throwable) { null }
+
+    /**
+     * - "localhost" -> IP DNS sistem (Go di Android tidak punya resolver sistem)
+     * - alamat DNS berupa hostname (mis. home.xl.co.id) -> di-resolve jadi IP dulu
+     * - log error Xray ditulis ke filesDir/xray.log (bisa dilihat dari tombol Log)
+     */
+    private fun patchConfig(cfg: String): String {
         val root = JSONObject(cfg)
-        val servers = root.optJSONObject("dns")?.optJSONArray("servers") ?: return cfg
-        for (i in 0 until servers.length()) {
-            val s = servers.optJSONObject(i) ?: continue
-            if (s.optString("address") == "localhost") s.put("address", dns)
+        val sys = systemDns()
+        val servers = root.optJSONObject("dns")?.optJSONArray("servers")
+        if (servers != null) {
+            for (i in 0 until servers.length()) {
+                val s = servers.optJSONObject(i) ?: continue
+                val a = s.optString("address")
+                when {
+                    a == "localhost" -> s.put("address", sys)
+                    a.isNotEmpty() && !a.contains("://") && !a.startsWith("fakedns") && !isIp(a) ->
+                        resolveHost(a)?.let { s.put("address", it) }
+                }
+            }
         }
+        val log = root.optJSONObject("log") ?: JSONObject().also { root.put("log", it) }
+        log.put("error", File(filesDir, "xray.log").absolutePath)
         return root.toString()
     }
 
